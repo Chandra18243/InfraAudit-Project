@@ -1,3 +1,4 @@
+---
 - name: Full system inventory collection
   hosts: all
   become: true
@@ -40,27 +41,9 @@
       changed_when: false
       failed_when: false
 
-    - name: Get routing table
-      command: ip -j route
-      register: ip_route
-      changed_when: false
-      failed_when: false
-
     - name: Get mounted filesystems
       command: findmnt -J
       register: mount_info
-      changed_when: false
-      failed_when: false
-
-    - name: Get user accounts
-      command: getent passwd
-      register: user_accounts
-      changed_when: false
-      failed_when: false
-
-    - name: Get sudoers config
-      command: cat /etc/sudoers
-      register: sudoers
       changed_when: false
       failed_when: false
 
@@ -76,6 +59,16 @@
       changed_when: false
       failed_when: false
 
+    - name: Gather VG info in JSON
+      command: vgs --reportformat json
+      register: vgs_json_output
+      changed_when: false
+      failed_when: false
+
+    - name: Parse VG JSON output
+      set_fact:
+        lvm_vgs: "{{ (vgs_json_output.stdout | from_json).report[0].vg }}"
+
     - name: Build full system info dictionary
       set_fact:
         full_system_info:
@@ -87,12 +80,10 @@
           parted: "{{ parted_output.stdout }}"
           disks: "{{ lsblk_output.stdout | from_json }}"
           ip_addresses: "{{ ip_addr.stdout | from_json }}"
-          routes: "{{ ip_route.stdout | from_json }}"
           mounts: "{{ mount_info.stdout | from_json }}"
-          users: "{{ user_accounts.stdout }}"
-          sudoers: "{{ sudoers.stdout }}"
           kernel: "{{ kernel_version.stdout }}"
           uptime: "{{ uptime_info.stdout }}"
+          lvm_vgs: "{{ lvm_vgs }}"
 
     - name: Ensure report directory exists on control node
       delegate_to: localhost
@@ -107,4 +98,3 @@
         content: "{{ full_system_info | to_nice_json }}"
         dest: "{{ report_dir }}/{{ inventory_hostname }}.json"
       delegate_to: localhost
-
