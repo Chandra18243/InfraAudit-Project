@@ -1,0 +1,15 @@
+/var/opt/reports/*.report {
+    daily
+    missingok
+    rotate 7
+    compress
+    delaycompress
+    notifempty
+    create 0644 root root
+    dateext
+    maxage 7
+}
+
+#crontab -e
+#it rotates daily at 2AM
+#0 2 * * * /usr/sbin/logrotate -s /var/lib/logrotate/status /etc/logrotate.d/reports
