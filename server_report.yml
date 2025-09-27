@@ -1,0 +1,110 @@
+- name: Full system inventory collection
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    report_dir: "/var/opt/ansible/reports"
+
+  tasks:
+    - name: Gather system facts
+      setup:
+
+    - name: Gather installed package facts
+      package_facts:
+
+    - name: Get installed RPMs in JSON format
+      shell: |
+        rpm -qa --qf '{"name":"%{NAME}","version":"%{VERSION}-%{RELEASE}","arch":"%{ARCH}"}\n'
+      register: rpm_output
+
+    - name: Parse RPM output to JSON
+      set_fact:
+        installed_rpms: "{{ rpm_output.stdout_lines | map('from_json') | list }}"
+
+    - name: Gather partition info (parted)
+      command: parted -lm
+      register: parted_output
+      changed_when: false
+      failed_when: false
+
+    - name: Gather disk info (lsblk)
+      command: lsblk -J
+      register: lsblk_output
+      changed_when: false
+      failed_when: false
+
+    - name: Get IP address info
+      command: ip -j addr
+      register: ip_addr
+      changed_when: false
+      failed_when: false
+
+    - name: Get routing table
+      command: ip -j route
+      register: ip_route
+      changed_when: false
+      failed_when: false
+
+    - name: Get mounted filesystems
+      command: findmnt -J
+      register: mount_info
+      changed_when: false
+      failed_when: false
+
+    - name: Get user accounts
+      command: getent passwd
+      register: user_accounts
+      changed_when: false
+      failed_when: false
+
+    - name: Get sudoers config
+      command: cat /etc/sudoers
+      register: sudoers
+      changed_when: false
+      failed_when: false
+
+    - name: Get kernel version
+      command: uname -r
+      register: kernel_version
+      changed_when: false
+      failed_when: false
+
+    - name: Get system uptime
+      command: uptime -p
+      register: uptime_info
+      changed_when: false
+      failed_when: false
+
+    - name: Build full system info dictionary
+      set_fact:
+        full_system_info:
+          inventory_hostname: "{{ inventory_hostname }}"
+          timestamp: "{{ lookup('pipe', 'date +%Y-%m-%dT%H:%M:%S%z') }}"
+          ansible_facts: "{{ ansible_facts }}"
+          packages: "{{ ansible_facts.packages }}"
+          rpm_list: "{{ installed_rpms }}"
+          parted: "{{ parted_output.stdout }}"
+          disks: "{{ lsblk_output.stdout | from_json }}"
+          ip_addresses: "{{ ip_addr.stdout | from_json }}"
+          routes: "{{ ip_route.stdout | from_json }}"
+          mounts: "{{ mount_info.stdout | from_json }}"
+          users: "{{ user_accounts.stdout }}"
+          sudoers: "{{ sudoers.stdout }}"
+          kernel: "{{ kernel_version.stdout }}"
+          uptime: "{{ uptime_info.stdout }}"
+
+    - name: Ensure report directory exists on control node
+      delegate_to: localhost
+      run_once: true
+      file:
+        path: "{{ report_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Save full system info JSON on control node
+      copy:
+        content: "{{ full_system_info | to_nice_json }}"
+        dest: "{{ report_dir }}/{{ inventory_hostname }}.json"
+      delegate_to: localhost
+
